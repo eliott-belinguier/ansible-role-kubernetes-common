@@ -1,0 +1,41 @@
+---
+- name: Reset Kubernetes Node
+  command: kubeadm reset -f
+  ignore_errors: yes
+
+- name: Remove Kubernetes Packages
+  package:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+      - kubernetes-cni
+    state: absent
+  ignore_errors: yes
+
+- name: Remove Kubernetes Configuration Directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/kubernetes
+    - /var/lib/kubelet
+    - /var/lib/etcd
+    - /etc/cni
+    - /opt/cni
+    - /var/lib/cni
+    - /var/run/calico
+    - /home/{{ ansible_user }}/.kube
+    - /root/.kube
+
+- name: Prune Containerd/Docker
+  shell: crictl rmp -a
+  ignore_errors: yes
+  failed_when: false
+
+- name: Clean iptables
+  shell: |
+    iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
+  ignore_errors: yes
+  failed_when: false
+

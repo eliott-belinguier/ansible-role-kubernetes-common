@@ -1,0 +1,111 @@
+---
+- name: Disable Swap
+  shell: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: Remove Swap from fstab
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+    replace: '# \1'
+
+- name: Load Kernel Modules for Containerd
+  copy:
+    dest: /etc/modules-load.d/containerd.conf
+    content: |
+      overlay
+      br_netfilter
+
+- name: Load Kernel Modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Configure Sysctl for Kubernetes
+  copy:
+    dest: /etc/sysctl.d/99-kubernetes-cri.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.ipv4.ip_forward                 = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+
+- name: Apply Sysctl params
+  command: sysctl --system
+
+- name: Install Dependencies
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: yes
+
+- name: Add Docker GPG Key
+  shell: |
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL {{ docker_gpg_key }} | gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
+
+- name: Add Docker Repository
+  shell: |
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] {{ docker_repo_url }} \
+      $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+- name: Install Containerd
+  apt:
+    name: containerd.io
+    state: present
+    update_cache: yes
+
+- name: Generate default containerd config
+  shell: containerd config default > /etc/containerd/config.toml
+  args:
+    creates: /etc/containerd/config.toml
+
+- name: Configure Systemd Cgroup for Containerd
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    replace: 'SystemdCgroup = true'
+  notify: Restart Containerd
+
+- name: Ensure Containerd is running
+  service:
+    name: containerd
+    state: started
+    enabled: yes
+
+- name: Add Kubernetes GPG Key
+  shell: |
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key | gpg --dearmor -o {{ kubernetes_apt_keyring }} --yes
+
+- name: Add Kubernetes Repository
+  copy:
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    content: "{{ kubernetes_apt_repo }}"
+
+- name: Install Kubeadm, Kubelet, Kubectl
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+    update_cache: yes
+
+- name: Hold Kubernetes packages
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+

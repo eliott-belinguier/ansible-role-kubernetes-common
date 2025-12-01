@@ -1,0 +1,14 @@
+---
+# Kubernetes version
+kubernetes_version: "1.28"
+# Container runtime
+container_runtime: containerd
+
+# Docker repo (for containerd)
+docker_repo_url: "https://download.docker.com/linux/ubuntu"
+docker_gpg_key: "https://download.docker.com/linux/ubuntu/gpg"
+
+# Kubernetes repo
+kubernetes_apt_keyring: "/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+kubernetes_apt_repo: "deb [signed-by={{ kubernetes_apt_keyring }}] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+
